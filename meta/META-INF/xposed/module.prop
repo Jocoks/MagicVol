@@ -1,0 +1,5 @@
+minApiVersion=102
+targetApiVersion=102
+staticScope=false
+exceptionMode=protective
+description=把媒体音量改成 10 档：0 档静音（没有声音），1–9 档可自定义音量大小（相对系统最大音量的百分比，不会超过系统最大）。只改媒体音量，铃声 / 通话 / 闹钟不受影响。

@@ -1,0 +1,5 @@
+build/
+tools/*.jar
+tools/*.keystore
+*.apk
+.DS_Store

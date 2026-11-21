@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MagicVol</string>
+    <string name="module_description">把媒体音量改成 10 档：0 档静音，1–9 档可自定义音量百分比（相对系统最大音量，不会超过）。只改媒体音量，铃声 / 通话 / 闹钟不受影响。</string>
+</resources>
