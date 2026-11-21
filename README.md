@@ -62,6 +62,10 @@
 - 系统「安全音量」阈值（90）与本模块的满刻度（90）重合：插耳机时超过安全音量的提示行为仍由系统决定。
 - 音量百分比是「按 AudioPolicyManager 的音量曲线线性换算」的近似值，不同设备的响度曲线不同，人耳感受不会完全线性。
 
+## 许可证
+
+[MIT](LICENSE)。
+
 ## 致谢
 
 - 图标：unicorn by **Delapouite**，来自 [game-icons.net](https://game-icons.net)，**CC BY 3.0**。
