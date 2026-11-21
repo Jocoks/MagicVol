@@ -60,11 +60,6 @@ public class HookEntry extends XposedModule {
     /** libxposed 在 onSystemServerStarting 里给出的 system_server ClassLoader（services.jar 可见） */
     private static volatile ClassLoader sServerLoader;
 
-    /** 蓝牙绝对音量钩子是否已装 */
-    private static volatile boolean sBtHooked;
-
-    /** AudioService 侧「关闭 AVRCP 绝对音量」钩子是否已装 */
-    private static volatile boolean sAbsVolHooked;
 
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
@@ -86,8 +81,6 @@ public class HookEntry extends XposedModule {
         if (param.isSystemServer()) {
             ensureStreamHook();
             ensureNativeHook();
-            ensureBtHook();
-            ensureAbsVolHook();
             scheduleRetry();
         }
     }
@@ -105,8 +98,6 @@ public class HookEntry extends XposedModule {
             info("system server starting, loader=" + describeLoader(cl));
             ensureNativeHook();
             ensureStreamHook();
-            ensureBtHook();
-            ensureAbsVolHook();
             scheduleRetry();
         } catch (Throwable t) {
             log(Log.ERROR, TAG, "onSystemServerStarting failed", t);
@@ -119,9 +110,7 @@ public class HookEntry extends XposedModule {
             if (Constants.PKG_ANDROID.equals(param.getPackageName())) {
                 ensureNativeHook();
                 ensureStreamHook();
-                ensureBtHook();
-                ensureAbsVolHook();
-                scheduleRetry();
+                        scheduleRetry();
             }
         } catch (Throwable t) {
             log(Log.ERROR, TAG, "onPackageLoaded(" + param.getPackageName() + ") failed", t);
@@ -230,112 +219,6 @@ public class HookEntry extends XposedModule {
         }
     }
 
-    /**
-     * 关掉蓝牙的 AVRCP 绝对音量。
-     *
-     * 开着绝对音量时，音量值要以 0..127 发给耳机，而 Android 只会把「档位 0..9」这种粗粒度
-     * 索引交给蓝牙栈（BtHelper.setAvrcpAbsoluteVolumeIndex 里再除以 10），于是自定义百分比
-     * 完全失效：耳机只会按 1/9 一档跳。关掉之后手机端自己按百分比做衰减（setStreamVolumeIndexAS
-     * 的 remap 已生效），耳机保持它自己的音量，10 档百分比就又准了。
-     */
-    private boolean ensureBtHook() {
-        if (sBtHooked) {
-            return true;
-        }
-        try {
-            Class<?> cls = findServerClass("com.android.server.audio.BtHelper");
-            Method m = cls.getDeclaredMethod("setAvrcpAbsoluteVolumeSupported", boolean.class);
-            hook(m)
-                    .setId("magicvol-bt-absolute-volume")
-                    .setExceptionMode(ExceptionMode.PROTECTIVE)
-                    .intercept(new Hooker() {
-                        @Override
-                        public Object intercept(Chain chain) throws Throwable {
-                            try {
-                                info("bt absolute volume forced off (earbud uses phone-side attenuation)");
-                            } catch (Throwable ignore) {
-                                // 日志失败不影响主流程
-                            }
-                            return chain.proceed(new Object[]{Boolean.FALSE});
-                        }
-                    });
-            sBtHooked = true;
-            info("hooked BtHelper.setAvrcpAbsoluteVolumeSupported");
-            return true;
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook bt absolute volume failed", t);
-            return false;
-        }
-    }
-
-    /**
-     * 关掉 AVRCP 绝对音量（AudioService 侧，真正让手机端做软件衰减的那一步）。
-     *
-     * <p>只把 BtHelper 的 mAvrcpAbsVolSupported 置 false 只能让「发往耳机的音量值」停下，
-     * AudioPolicyManager 仍认为这条 A2DP 输出是「硬件音量设备」（AudioService 早先调过
-     * {@code AudioSystem.setDeviceAbsoluteVolumeEnabled(128, "", true, stream)}），于是策略层
-     * 把软件增益钉在 1.0，手机侧怎么改索引都不出声，只剩 0 档静音和最高档有变化。
-     *
-     * <p>这里把 AudioService 的两个重载都强制传 false：
-     * <ul>
-     *   <li>{@code setAvrcpAbsoluteVolumeSupported(boolean)}（AudioService.java:10623，蓝牙连/断时由
-     *       AudioDeviceBroker 调用）；</li>
-     *   <li>{@code setAvrcpAbsoluteVolumeSupported(boolean, boolean)}（AudioService.java:10581，
-     *       addToAbsoluteVolumeDevices/removeFromAbsoluteVolumeDevices 调用），只改第一个参数。</li>
-     * </ul>
-     * 之后 {@code mAvrcpAbsVolSupported=false} → 触发
-     * {@code mAudioSystem.setDeviceAbsoluteVolumeEnabled(128, "", false, -1)} 与
-     * {@code postSetAvrcpAbsoluteVolumeSupported(false)}，策略层改走软件衰减，
-     * setStreamVolumeIndexAS 的 remap（用户百分比）才真正改变耳机侧响度。
-     */
-    private boolean ensureAbsVolHook() {
-        if (sAbsVolHooked) {
-            return true;
-        }
-        try {
-            Class<?> cls = findServerClass("com.android.server.audio.AudioService");
-            Method one = cls.getDeclaredMethod("setAvrcpAbsoluteVolumeSupported", boolean.class);
-            hook(one)
-                    .setId("magicvol-absvol-one")
-                    .setExceptionMode(ExceptionMode.PROTECTIVE)
-                    .intercept(new Hooker() {
-                        @Override
-                        public Object intercept(Chain chain) throws Throwable {
-                            try {
-                                info("avrcp abs volume forced off (1-arg)");
-                            } catch (Throwable ignore) {
-                                // 日志失败不影响主流程
-                            }
-                            return chain.proceed(new Object[]{Boolean.FALSE});
-                        }
-                    });
-            Method two = cls.getDeclaredMethod("setAvrcpAbsoluteVolumeSupported",
-                    boolean.class, boolean.class);
-            hook(two)
-                    .setId("magicvol-absvol-two")
-                    .setExceptionMode(ExceptionMode.PROTECTIVE)
-                    .intercept(new Hooker() {
-                        @Override
-                        public Object intercept(Chain chain) throws Throwable {
-                            Object[] args = chain.getArgs().toArray();
-                            args[0] = Boolean.FALSE;
-                            try {
-                                info("avrcp abs volume forced off (2-arg)");
-                            } catch (Throwable ignore) {
-                                // 日志失败不影响主流程
-                            }
-                            return chain.proceed(args);
-                        }
-                    });
-            sAbsVolHooked = true;
-            info("hooked AudioService.setAvrcpAbsoluteVolumeSupported (both overloads)");
-            return true;
-        } catch (Throwable t) {
-            log(Log.ERROR, TAG, "hook avrcp absolute volume failed", t);
-            return false;
-        }
-    }
-
     private void scheduleRetry() {
         if (sRetryScheduled || (sStreamHooked && sNativeHooked)) {
             return;
@@ -353,13 +236,7 @@ public class HookEntry extends XposedModule {
                     if (!sStreamHooked) {
                         ensureStreamHook();
                     }
-                    if (!sBtHooked) {
-                        ensureBtHook();
-                    }
-                    if (!sAbsVolHooked) {
-                        ensureAbsVolHook();
-                    }
-                    if ((sStreamHooked && sNativeHooked && sBtHooked && sAbsVolHooked) || sRetries >= MAX_RETRY) {
+                    if ((sStreamHooked && sNativeHooked) || sRetries >= MAX_RETRY) {
                         sRetryScheduled = false;
                         if (!sStreamHooked) {
                             log(Log.ERROR, TAG, "give up stream hook after " + sRetries

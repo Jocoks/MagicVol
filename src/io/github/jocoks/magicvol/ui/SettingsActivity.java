@@ -106,7 +106,11 @@ public class SettingsActivity extends Activity {
         root.addView(mStatus);
 
         Button apply = new Button(this);
-        apply.setText("应用这个音量设置");
+        apply.setText("请点击此按钮以更新音量设置");
+        // 绿色底 + 白字：这是唯一会让新百分比立刻生效的按钮，做成醒目色，避免用户改完滑杆就以为已经生效
+        apply.setTextColor(Color.WHITE);
+        apply.setBackgroundColor(Color.parseColor("#2E7D32"));
+        apply.setPadding(dp(8), dp(12), dp(8), dp(12));
         apply.setOnClickListener(v -> applyCurrentSetting());
         root.addView(apply);
 
@@ -218,7 +222,7 @@ public class SettingsActivity extends Activity {
         box.addView(title);
 
         TextView hint = new TextView(this);
-        hint.setText("例：起始 2、递增 3 → 第 1 档 2%、第 2 档 5%、第 3 档 8%……超过 100% 的档位按 100% 算。");
+        hint.setText("例：起始 4、递增 5 → 第 1 档 4%、第 2 档 9%、第 3 档 14%……超过 100% 的档位按 100% 算。");
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         hint.setTextColor(Color.GRAY);
         hint.setPadding(0, dp(4), 0, dp(8));
@@ -228,8 +232,8 @@ public class SettingsActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
 
-        mStartInput = numberInput("2");
-        mStepInput = numberInput("3");
+        mStartInput = numberInput("4");
+        mStepInput = numberInput("5");
 
         row.addView(smallLabel("起始"));
         row.addView(mStartInput);
@@ -509,7 +513,7 @@ public class SettingsActivity extends Activity {
     }
 
     /**
-     * 应用这个音量设置：立刻保存当前 9 档百分比，并强制把当前档位重新下发一次。
+     * 「请点击此按钮以更新音量设置」：立刻保存当前 9 档百分比，并强制把当前档位重新下发一次。
      *
      * <p>为什么要"抖"一下：AudioService 在档位没变时会跳过下发，钩子也就没机会按新百分比
      * 重算 HAL 索引；先把音量切到相邻档再切回来，才能保证新设置立刻生效。
