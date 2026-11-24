@@ -141,9 +141,32 @@ public class SettingsActivity extends Activity {
         scroll.addView(root);
         setContentView(scroll);
 
+        loadSchemes();
+    }
+
+    /**
+     * 读取方案列表；第一次运行时把内置「推荐」方案写进去。
+     *
+     * <p>只有「全新安装、滑杆还从没存过值」才直接切到推荐方案；老用户升级时只多一个
+     * 可点的方案按钮，不会被改掉当前 9 档数值。
+     */
+    private void loadSchemes() {
         mSchemes = Schemes.parse(mPrefs.getString(Constants.KEY_SCHEMES, ""));
         mActiveScheme = mPrefs.getString(Constants.KEY_ACTIVE_SCHEME, null);
-        refreshScheme();
+        Schemes.PresetPlan plan = Schemes.planPreset(
+                mSchemes,
+                mPrefs.getBoolean(Constants.KEY_PRESET_SEEDED, false),
+                mPrefs.contains(Constants.key(1)));
+        mPrefs.edit().putBoolean(Constants.KEY_PRESET_SEEDED, true).apply();
+        if (plan.add) {
+            mSchemes.add(0, Schemes.recommended());
+            persistSchemes();
+        }
+        if (plan.apply) {
+            applyScheme(Schemes.recommended(), false);
+        } else {
+            refreshScheme();
+        }
     }
 
     @Override
@@ -412,12 +435,18 @@ public class SettingsActivity extends Activity {
     }
 
     private void applyScheme(Schemes.Entry entry) {
+        applyScheme(entry, true);
+    }
+
+    private void applyScheme(Schemes.Entry entry, boolean notify) {
         writeTable(entry.pct);
         mActiveScheme = entry.name;
         mSchemeDirty = false;
         persistSchemes();
         refreshScheme();
-        toast("已切换到方案：" + entry.name);
+        if (notify) {
+            toast("已切换到方案：" + entry.name);
+        }
     }
 
     private void markSchemeDirty() {

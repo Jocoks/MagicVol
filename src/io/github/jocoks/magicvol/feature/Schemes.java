@@ -14,6 +14,12 @@ import java.util.List;
  */
 public final class Schemes {
 
+    /** 内置推荐方案的名字（第一次打开时自动带上） */
+    public static final String PRESET_NAME = "推荐";
+
+    /** 内置推荐方案的 9 档百分比（低档细、高档拉开，实测听感比较顺） */
+    public static final int[] PRESET_PCT = {7, 12, 17, 22, 27, 40, 60, 80, 100};
+
     /** 一个方案：名字 + 第 1..9 档的百分比（已规范化） */
     public static final class Entry {
 
@@ -84,6 +90,41 @@ public final class Schemes {
             }
         }
         return -1;
+    }
+
+    /** 内置推荐方案（Entry 构造时会按「低档不高于高档」再规范化一次） */
+    public static Entry recommended() {
+        return new Entry(PRESET_NAME, PRESET_PCT);
+    }
+
+    /** 第一次运行时要对方案列表做什么 */
+    public static final class PresetPlan {
+
+        /** 是否把「推荐」插到列表最前面 */
+        public final boolean add;
+        /** 是否直接选中并应用「推荐」（只发生在全新安装） */
+        public final boolean apply;
+
+        PresetPlan(boolean add, boolean apply) {
+            this.add = add;
+            this.apply = apply;
+        }
+    }
+
+    /**
+     * 计算内置推荐方案的初始化动作。
+     *
+     * @param list           已读取的方案列表
+     * @param seeded         以前是否已经执行过（用户删掉后不再自动加回来）
+     * @param hasStoredTable 用户是否已经存过 9 档数值（说明不是全新安装）
+     */
+    public static PresetPlan planPreset(List<Entry> list, boolean seeded, boolean hasStoredTable) {
+        if (seeded) {
+            return new PresetPlan(false, false);
+        }
+        boolean add = indexOf(list, PRESET_NAME) < 0;
+        boolean apply = add && list.isEmpty() && !hasStoredTable;
+        return new PresetPlan(add, apply);
     }
 
     /** 生成本次默认方案名：方案 1、方案 2 …… */

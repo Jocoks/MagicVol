@@ -21,6 +21,9 @@ public final class Constants {
     public static final String KEY_SCHEMES = "schemes";
     public static final String KEY_ACTIVE_SCHEME = "scheme_active";
 
+    /** 是否已经写过内置「推荐」方案（用户自己删掉后不再自动加回来） */
+    public static final String KEY_PRESET_SEEDED = "preset_seeded";
+
     /** 可自定义的档位数（0 档固定静音，不存） */
     public static final int CUSTOM_STEPS = 9;
 
