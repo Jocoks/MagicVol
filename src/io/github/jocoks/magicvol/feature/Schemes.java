@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class Schemes {
 
-    /** 内置推荐方案的名字（第一次打开时自动带上） */
+    /** 内置推荐方案的名字（第一次打开时加入方案列表，不会自动套用） */
     public static final String PRESET_NAME = "推荐";
 
     /** 内置推荐方案的 9 档百分比（低档细、高档拉开，实测听感比较顺） */
@@ -97,34 +97,25 @@ public final class Schemes {
         return new Entry(PRESET_NAME, PRESET_PCT);
     }
 
-    /** 第一次运行时要对方案列表做什么 */
-    public static final class PresetPlan {
-
-        /** 是否把「推荐」插到列表最前面 */
-        public final boolean add;
-        /** 是否直接选中并应用「推荐」（只发生在全新安装） */
-        public final boolean apply;
-
-        PresetPlan(boolean add, boolean apply) {
-            this.add = add;
-            this.apply = apply;
-        }
+    /**
+     * 第一次运行时是否把「推荐」加进方案列表。
+     *
+     * <p>只加按钮、不套用数值：推荐只是可选方案之一，不能替用户决定默认档位。
+     * seeded 表示以前已经加过一次，用户自己删掉后就不再自动加回来。
+     */
+    public static boolean shouldAddPreset(List<Entry> list, boolean seeded) {
+        return !seeded && indexOf(list, PRESET_NAME) < 0;
     }
 
     /**
-     * 计算内置推荐方案的初始化动作。
+     * 是否是旧版「全新安装自动选中推荐」留下的状态。
      *
-     * @param list           已读取的方案列表
-     * @param seeded         以前是否已经执行过（用户删掉后不再自动加回来）
-     * @param hasStoredTable 用户是否已经存过 9 档数值（说明不是全新安装）
+     * <p>1.1.0 / 1.1.1 会替用户套用推荐，1.1.2 起不再这么做；升级时用这个判断把
+     * 那一次自动写入的推荐还原成默认档位。用户自己改过数值就不算，避免误伤。
      */
-    public static PresetPlan planPreset(List<Entry> list, boolean seeded, boolean hasStoredTable) {
-        if (seeded) {
-            return new PresetPlan(false, false);
-        }
-        boolean add = indexOf(list, PRESET_NAME) < 0;
-        boolean apply = add && list.isEmpty() && !hasStoredTable;
-        return new PresetPlan(add, apply);
+    public static boolean looksAutoSelectedPreset(String activeName, int[] table) {
+        return PRESET_NAME.equals(activeName)
+                && java.util.Arrays.equals(StepTable.sanitize(table), PRESET_PCT);
     }
 
     /** 生成本次默认方案名：方案 1、方案 2 …… */

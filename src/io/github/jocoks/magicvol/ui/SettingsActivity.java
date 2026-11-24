@@ -4,8 +4,11 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.AssetFileDescriptor;
 import android.graphics.Color;
+import android.media.AudioAttributes;
 import android.media.AudioManager;
+import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -53,6 +56,9 @@ public class SettingsActivity extends Activity {
 
     private EditText mStartInput;
     private EditText mStepInput;
+
+    private Button mPlayButton;
+    private MediaPlayer mPlayer;
 
     private TextView mSchemeLabel;
     private LinearLayout mSchemeChips;
@@ -114,6 +120,8 @@ public class SettingsActivity extends Activity {
         apply.setOnClickListener(v -> applyCurrentSetting());
         root.addView(apply);
 
+        root.addView(buildTestAudioSection());
+
         Button reset = new Button(this);
         reset.setText("恢复默认档位（11…100%）");
         reset.setOnClickListener(v -> resetTable());
@@ -145,28 +153,41 @@ public class SettingsActivity extends Activity {
     }
 
     /**
-     * 读取方案列表；第一次运行时把内置「推荐」方案写进去。
+     * 读取方案列表；第一次运行时把内置「推荐」加进列表。
      *
-     * <p>只有「全新安装、滑杆还从没存过值」才直接切到推荐方案；老用户升级时只多一个
-     * 可点的方案按钮，不会被改掉当前 9 档数值。
+     * <p>「推荐」只是一个可选方案：第一次打开只多一个按钮，不会自动套用，也不会改掉
+     * 当前的 9 档数值。用户自己删掉后不再自动加回来。
      */
     private void loadSchemes() {
         mSchemes = Schemes.parse(mPrefs.getString(Constants.KEY_SCHEMES, ""));
         mActiveScheme = mPrefs.getString(Constants.KEY_ACTIVE_SCHEME, null);
-        Schemes.PresetPlan plan = Schemes.planPreset(
-                mSchemes,
-                mPrefs.getBoolean(Constants.KEY_PRESET_SEEDED, false),
-                mPrefs.contains(Constants.key(1)));
-        mPrefs.edit().putBoolean(Constants.KEY_PRESET_SEEDED, true).apply();
-        if (plan.add) {
+        if (Schemes.shouldAddPreset(mSchemes,
+                mPrefs.getBoolean(Constants.KEY_PRESET_SEEDED, false))) {
             mSchemes.add(0, Schemes.recommended());
             persistSchemes();
         }
-        if (plan.apply) {
-            applyScheme(Schemes.recommended(), false);
-        } else {
-            refreshScheme();
+        mPrefs.edit().putBoolean(Constants.KEY_PRESET_SEEDED, true).apply();
+        undoAutoSelectedPreset();
+        refreshScheme();
+    }
+
+    /**
+     * 还原旧版「全新安装自动选中推荐」留下的状态。
+     *
+     * <p>1.1.0 / 1.1.1 会替用户套用推荐，从 1.1.2 起推荐只作为可选方案。只在
+     * 「当前方案 = 推荐 且 数值正好等于推荐值」时还原成默认档位，只做一次；
+     * 用户改过数值不会被动。
+     */
+    private void undoAutoSelectedPreset() {
+        if (mPrefs.getBoolean(Constants.KEY_PRESET_FIXED, false)) {
+            return;
         }
+        if (Schemes.looksAutoSelectedPreset(mActiveScheme, readRaw())) {
+            writeTable(StepTable.defaults());
+            mActiveScheme = null;
+            persistSchemes();
+        }
+        mPrefs.edit().putBoolean(Constants.KEY_PRESET_FIXED, true).apply();
     }
 
     @Override
@@ -571,6 +592,132 @@ public class SettingsActivity extends Activity {
         } catch (Throwable t) {
             toast("应用失败：" + t);
         }
+    }
+
+    // ── 内置测试音频 ──────────────────────────────────────────────
+
+    private LinearLayout buildTestAudioSection() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(0, dp(18), 0, 0);
+
+        TextView title = new TextView(this);
+        title.setText("测试音频");
+        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        title.setTextColor(Color.BLACK);
+        box.addView(title);
+
+        TextView hint = new TextView(this);
+        hint.setText("内置一段约 3 秒的音频，点一次播放一遍。边播边拖滑杆或切方案，可以直接听各档位的响度差别。");
+        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        hint.setTextColor(Color.GRAY);
+        hint.setPadding(0, dp(4), 0, dp(8));
+        box.addView(hint);
+
+        mPlayButton = new Button(this);
+        mPlayButton.setText("播放测试音频");
+        mPlayButton.setOnClickListener(v -> toggleTestAudio());
+        box.addView(mPlayButton);
+        return box;
+    }
+
+    private void toggleTestAudio() {
+        if (mPlayer != null && mPlayer.isPlaying()) {
+            stopTestAudio();
+            toast("已停止播放");
+            return;
+        }
+        try {
+            if (mPlayer == null) {
+                mPlayer = createPlayer();
+            }
+            if (mPlayer == null) {
+                return;
+            }
+            mPlayer.seekTo(0);
+            mPlayer.start();
+            mPlayButton.setText("停止播放");
+        } catch (Throwable t) {
+            toast("播放失败：" + t);
+            releasePlayer();
+        }
+    }
+
+    private MediaPlayer createPlayer() throws Exception {
+        int id = getResources().getIdentifier("test_audio", "raw", getPackageName());
+        if (id == 0) {
+            toast("内置测试音频缺失，请重新安装 APK");
+            return null;
+        }
+        MediaPlayer player = new MediaPlayer();
+        AudioAttributes attrs = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build();
+        player.setAudioAttributes(attrs);
+        AssetFileDescriptor afd = getResources().openRawResourceFd(id);
+        try {
+            player.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
+        } finally {
+            afd.close();
+        }
+        player.prepare();
+        player.setOnCompletionListener(mp -> {
+            if (mPlayButton != null) {
+                mPlayButton.setText("播放测试音频");
+            }
+        });
+        player.setOnErrorListener((mp, what, extra) -> {
+            toast("音频播放出错（" + what + "/" + extra + "）");
+            releasePlayer();
+            return true;
+        });
+        return player;
+    }
+
+    private void stopTestAudio() {
+        if (mPlayer == null) {
+            return;
+        }
+        try {
+            if (mPlayer.isPlaying()) {
+                mPlayer.pause();
+            }
+            mPlayer.seekTo(0);
+        } catch (Throwable ignored) {
+        }
+        if (mPlayButton != null) {
+            mPlayButton.setText("播放测试音频");
+        }
+    }
+
+    private void releasePlayer() {
+        if (mPlayer != null) {
+            try {
+                mPlayer.stop();
+            } catch (Throwable ignored) {
+            }
+            try {
+                mPlayer.release();
+            } catch (Throwable ignored) {
+            }
+            mPlayer = null;
+        }
+        if (mPlayButton != null) {
+            mPlayButton.setText("播放测试音频");
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        stopTestAudio();
+    }
+
+    @Override
+    protected void onDestroy() {
+        releasePlayer();
+        super.onDestroy();
     }
 
     private void resetTable() {
